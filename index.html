@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X-Golf Glen Carbon — Guest WiFi</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background:#0b1f14; color:#fff;
+         display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
+  .card { background:#123b25; padding:32px 28px; border-radius:14px; max-width:380px; text-align:center;
+          box-shadow:0 8px 24px rgba(0,0,0,.3); }
+  h1 { font-size:1.3rem; margin-bottom:8px; }
+  p { font-size:.95rem; line-height:1.4; color:#d8e6dc; }
+  a.btn { display:inline-block; margin-top:20px; background:#3ddc84; color:#06210f; font-weight:700;
+          padding:12px 22px; border-radius:8px; text-decoration:none; }
+  .spinner { margin:18px auto; width:28px; height:28px; border:3px solid #2c5c3f; border-top-color:#3ddc84;
+             border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <h1>Connecting to X-Golf WiFi…</h1>
+    <p id="msg">One moment while we get you online.</p>
+    <div class="spinner" id="spinner"></div>
+  </div>
+
+<script>
+/*
+  X-Golf Glen Carbon — Guest WiFi redirect-catcher.
+  This static page has two jobs and detects which one to do based on the query string:
+
+  1) INBOUND (from Meraki): Meraki loads this page as the SSID's Custom Splash URL and
+     appends its own query params, including `base_grant_url` (the one-time link that
+     actually grants network access) plus client/node MAC identifiers. We forward the
+     guest to the Zapier Interfaces sign-up form, passing `base_grant_url` (and the
+     other Meraki params) through as query params so the form's hidden field can
+     pre-fill from them.
+
+  2) RETURN (from Zapier): After the guest submits the form, Zapier's "Navigate to
+     external URL" action is configured to send them back to THIS page with
+     "Send data to this page" enabled, which re-appends `base_grant_url` (and the
+     other submitted fields) as query params. On that return trip, this page does the
+     final hop: it redirects the browser straight to the value of `base_grant_url`,
+     which is Meraki's own grant endpoint — completing the handshake and unlocking
+     internet access for the guest.
+
+  Config: update ZAPIER_FORM_URL below to match your published Zapier Interfaces page.
+*/
+var ZAPIER_FORM_URL = "https://new-form-project-1b1309.zapier.app/page";
+
+function getParams() {
+  return new URLSearchParams(window.location.search);
+}
+
+function isReturnTrip(params) {
+  // Zapier's "Send data to this page" appends a submission id; Meraki's inbound
+  // load does not. Use that as the signal we're on the return trip.
+  return params.has("submissionId") || params.has("zap_submission_id");
+}
+
+(function () {
+  var params = getParams();
+  var grantUrl = params.get("base_grant_url");
+  var msg = document.getElementById("msg");
+
+  if (!grantUrl) {
+    msg.textContent = "This page is meant to be opened from the WiFi sign-in screen.";
+    document.getElementById("spinner").style.display = "none";
+    return;
+  }
+
+  if (isReturnTrip(params)) {
+    // Final hop: send the guest to Meraki's real grant endpoint to unlock internet.
+    window.location.replace(grantUrl);
+  } else {
+    // First hop: forward to the Zapier sign-up form, carrying base_grant_url along.
+    var dest = new URL(ZAPIER_FORM_URL);
+    params.forEach(function (value, key) { dest.searchParams.set(key, value); });
+    window.location.replace(dest.toString());
+  }
+})();
+</script>
+</body>
+</html>

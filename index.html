@@ -20,16 +20,24 @@
 </head>
 <body>
   <div class="card" id="card">
-    <h1>Connecting to X-Golf WiFi…</h1>
+    <h1 id="title">Connecting to X-Golf WiFi…</h1>
     <p id="msg">One moment while we get you online.</p>
     <div class="spinner" id="spinner"></div>
+    <a class="btn" id="actionBtn" href="#" style="display:none;"></a>
   </div>
 
 <script>
 /*
   X-Golf Glen Carbon — Guest WiFi redirect-catcher.
 
-  Zapier Interfaces form fields cannot dynamically pre-fill from an incoming URL
+  Apple's WiFi sign-in popup ("Captive Network Assistant") is a heavily restricted
+  mini-browser that fails to run Zapier's form-submission JS reliably (confirmed:
+  same form works fine in real Safari). To work around this, we avoid automatic
+  script-driven redirects and instead show the guest a real tappable button at each
+  step — a genuine link tap is far more likely to hand off to full Safari than a
+  JS `location.replace()` call, which tends to stay stuck inside the restricted view.
+
+  Zapier Interfaces form fields also cannot dynamically pre-fill from an incoming URL
   parameter, and its "Navigate to external URL" action cannot use a dynamic/field
   value as the redirect target (both confirmed to only support static text) — so we
   can't rely on Zapier to carry Meraki's one-time `base_grant_url` value through the
@@ -37,15 +45,15 @@
 
   1) INBOUND (from Meraki): Meraki loads this page as the SSID's Custom Splash URL
      and appends `base_grant_url` (the one-time link that grants network access) as a
-     query parameter. We save that value in this browser's storage, then forward the
-     guest to the Zapier sign-up form (no need to pass data into Zapier at all —
-     it's only used for the email/name capture).
+     query parameter. We save that value in this browser's storage, then show a
+     "Continue to Sign-Up" button pointing at the Zapier sign-up form.
 
   2) RETURN (from Zapier): After the guest submits the form, Zapier's "Navigate to
      external URL" action sends them back to this same page (no base_grant_url query
      param present this time — that's how we detect we're on the return trip). We
-     read back the value we stored in step 1 and redirect the browser straight to it,
-     completing the handshake with Meraki and unlocking internet access.
+     read back the value we stored in step 1 and show a "Connect to WiFi" button
+     pointing straight at it — tapping it completes the handshake with Meraki and
+     unlocks internet access.
 
   Config: update ZAPIER_FORM_URL below to match your published Zapier Interfaces page.
 */
@@ -69,31 +77,40 @@ function loadGrantUrl() {
   }
 }
 
+function showButton(label, href, openInNewTab) {
+  document.getElementById("spinner").style.display = "none";
+  var btn = document.getElementById("actionBtn");
+  btn.textContent = label;
+  btn.href = href;
+  if (openInNewTab) { btn.target = "_blank"; btn.rel = "noopener"; }
+  btn.style.display = "inline-block";
+}
+
 (function () {
   var params = getParams();
   var inboundGrantUrl = params.get("base_grant_url");
+  var title = document.getElementById("title");
   var msg = document.getElementById("msg");
 
   if (inboundGrantUrl) {
-    // First hop from Meraki: remember the grant link, then send guest to the form.
+    // First hop from Meraki: remember the grant link, then prompt guest to continue.
     saveGrantUrl(inboundGrantUrl);
-    console.log("[xgolf-wifi] saved grant url:", loadGrantUrl());
-    if (params.get("debug") === "1") {
-      msg.textContent = "DEBUG: saved -> " + loadGrantUrl();
-      document.getElementById("spinner").style.display = "none";
-      return;
-    }
-    window.location.replace(ZAPIER_FORM_URL);
+    title.textContent = "Welcome to X-Golf Glen Carbon";
+    msg.textContent = "Tap below to sign up for guest WiFi with your email.";
+    showButton("Continue to Sign-Up →", ZAPIER_FORM_URL, true);
     return;
   }
 
   var storedGrantUrl = loadGrantUrl();
   if (storedGrantUrl) {
-    // Return trip from Zapier: use the grant link we remembered in step 1.
-    window.location.replace(storedGrantUrl);
+    // Return trip from Zapier: prompt guest to finish connecting.
+    title.textContent = "You're almost connected!";
+    msg.textContent = "Tap below to finish connecting to WiFi.";
+    showButton("Connect to WiFi →", storedGrantUrl, false);
     return;
   }
 
+  title.textContent = "X-Golf Glen Carbon Guest WiFi";
   msg.textContent = "This page is meant to be opened from the WiFi sign-in screen.";
   document.getElementById("spinner").style.display = "none";
 })();

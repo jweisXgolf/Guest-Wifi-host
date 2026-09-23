@@ -77,6 +77,12 @@ function loadGrantUrl() {
   if (inboundGrantUrl) {
     // First hop from Meraki: remember the grant link, then send guest to the form.
     saveGrantUrl(inboundGrantUrl);
+    console.log("[xgolf-wifi] saved grant url:", loadGrantUrl());
+    if (params.get("debug") === "1") {
+      msg.textContent = "DEBUG: saved -> " + loadGrantUrl();
+      document.getElementById("spinner").style.display = "none";
+      return;
+    }
     window.location.replace(ZAPIER_FORM_URL);
     return;
   }

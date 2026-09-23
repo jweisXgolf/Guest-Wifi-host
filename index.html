@@ -28,57 +28,68 @@
 <script>
 /*
   X-Golf Glen Carbon — Guest WiFi redirect-catcher.
-  This static page has two jobs and detects which one to do based on the query string:
 
-  1) INBOUND (from Meraki): Meraki loads this page as the SSID's Custom Splash URL and
-     appends its own query params, including `base_grant_url` (the one-time link that
-     actually grants network access) plus client/node MAC identifiers. We forward the
-     guest to the Zapier Interfaces sign-up form, passing `base_grant_url` (and the
-     other Meraki params) through as query params so the form's hidden field can
-     pre-fill from them.
+  Zapier Interfaces form fields cannot dynamically pre-fill from an incoming URL
+  parameter, and its "Navigate to external URL" action cannot use a dynamic/field
+  value as the redirect target (both confirmed to only support static text) — so we
+  can't rely on Zapier to carry Meraki's one-time `base_grant_url` value through the
+  form submission and back to us. Instead, THIS page remembers it directly:
+
+  1) INBOUND (from Meraki): Meraki loads this page as the SSID's Custom Splash URL
+     and appends `base_grant_url` (the one-time link that grants network access) as a
+     query parameter. We save that value in this browser's storage, then forward the
+     guest to the Zapier sign-up form (no need to pass data into Zapier at all —
+     it's only used for the email/name capture).
 
   2) RETURN (from Zapier): After the guest submits the form, Zapier's "Navigate to
-     external URL" action is configured to send them back to THIS page with
-     "Send data to this page" enabled, which re-appends `base_grant_url` (and the
-     other submitted fields) as query params. On that return trip, this page does the
-     final hop: it redirects the browser straight to the value of `base_grant_url`,
-     which is Meraki's own grant endpoint — completing the handshake and unlocking
-     internet access for the guest.
+     external URL" action sends them back to this same page (no base_grant_url query
+     param present this time — that's how we detect we're on the return trip). We
+     read back the value we stored in step 1 and redirect the browser straight to it,
+     completing the handshake with Meraki and unlocking internet access.
 
   Config: update ZAPIER_FORM_URL below to match your published Zapier Interfaces page.
 */
 var ZAPIER_FORM_URL = "https://new-form-project-1b1309.zapier.app/x-golf-guest-wifi-sign-up";
+var STORAGE_KEY = "xgolf_base_grant_url";
 
 function getParams() {
   return new URLSearchParams(window.location.search);
 }
 
-function isReturnTrip(params) {
-  // Zapier's "Send data to this page" appends a submission id; Meraki's inbound
-  // load does not. Use that as the signal we're on the return trip.
-  return params.has("submissionId") || params.has("zap_submission_id");
+function saveGrantUrl(url) {
+  try { sessionStorage.setItem(STORAGE_KEY, url); } catch (e) {}
+  try { localStorage.setItem(STORAGE_KEY, url); } catch (e) {}
+}
+
+function loadGrantUrl() {
+  try {
+    return sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
+  } catch (e) {
+    return null;
+  }
 }
 
 (function () {
   var params = getParams();
-  var grantUrl = params.get("base_grant_url");
+  var inboundGrantUrl = params.get("base_grant_url");
   var msg = document.getElementById("msg");
 
-  if (!grantUrl) {
-    msg.textContent = "This page is meant to be opened from the WiFi sign-in screen.";
-    document.getElementById("spinner").style.display = "none";
+  if (inboundGrantUrl) {
+    // First hop from Meraki: remember the grant link, then send guest to the form.
+    saveGrantUrl(inboundGrantUrl);
+    window.location.replace(ZAPIER_FORM_URL);
     return;
   }
 
-  if (isReturnTrip(params)) {
-    // Final hop: send the guest to Meraki's real grant endpoint to unlock internet.
-    window.location.replace(grantUrl);
-  } else {
-    // First hop: forward to the Zapier sign-up form, carrying base_grant_url along.
-    var dest = new URL(ZAPIER_FORM_URL);
-    params.forEach(function (value, key) { dest.searchParams.set(key, value); });
-    window.location.replace(dest.toString());
+  var storedGrantUrl = loadGrantUrl();
+  if (storedGrantUrl) {
+    // Return trip from Zapier: use the grant link we remembered in step 1.
+    window.location.replace(storedGrantUrl);
+    return;
   }
+
+  msg.textContent = "This page is meant to be opened from the WiFi sign-in screen.";
+  document.getElementById("spinner").style.display = "none";
 })();
 </script>
 </body>

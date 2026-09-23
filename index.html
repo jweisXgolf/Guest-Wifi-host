@@ -117,13 +117,24 @@ function showForm(grantUrl) {
   form.addEventListener("submit", function (e) {
     // Let the browser submit this form normally (native POST, no JS) into the
     // hidden iframe — do NOT preventDefault. Just give it a moment to fire off,
-    // then move the guest along to the real WiFi grant URL.
+    // then grant WiFi access in the background and send the guest to our website.
     document.getElementById("title").textContent = "Connecting…";
     document.getElementById("msg").textContent = "One moment while we get you online.";
     form.style.display = "none";
     document.getElementById("spinner").style.display = "block";
     setTimeout(function () {
-      window.location.href = grantUrl;
+      // Fire the Meraki grant request in a hidden iframe (unlocks internet access
+      // for this device) without navigating away from this page yet.
+      var grantFrame = document.createElement("iframe");
+      grantFrame.style.display = "none";
+      grantFrame.src = grantUrl;
+      document.body.appendChild(grantFrame);
+
+      // Give the grant request a moment to complete, then take the guest to the
+      // X-Golf Glen Carbon website as the visible "you're connected" landing page.
+      setTimeout(function () {
+        window.location.href = "https://xgolfglencarbon.com/";
+      }, 1200);
     }, 800);
   });
 }

@@ -6,13 +6,20 @@
 <title>X-Golf Glen Carbon — Guest WiFi</title>
 <style>
   body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background:#0b1f14; color:#fff;
-         display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
-  .card { background:#123b25; padding:32px 28px; border-radius:14px; max-width:380px; text-align:center;
+         display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:16px; box-sizing:border-box; }
+  .card { background:#123b25; padding:32px 28px; border-radius:14px; max-width:380px; width:100%; text-align:center;
           box-shadow:0 8px 24px rgba(0,0,0,.3); }
   h1 { font-size:1.3rem; margin-bottom:8px; }
   p { font-size:.95rem; line-height:1.4; color:#d8e6dc; }
-  a.btn { display:inline-block; margin-top:20px; background:#3ddc84; color:#06210f; font-weight:700;
-          padding:12px 22px; border-radius:8px; text-decoration:none; }
+  small { display:block; font-size:.78rem; color:#9fc2ab; margin-top:14px; line-height:1.4; }
+  form { text-align:left; margin-top:18px; }
+  label { font-size:.82rem; color:#c9dccf; display:block; margin:10px 0 4px; }
+  input { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid #2c5c3f;
+          background:#0e2b1b; color:#fff; font-size:1rem; }
+  input:focus { outline:2px solid #3ddc84; }
+  button { width:100%; margin-top:18px; background:#3ddc84; color:#06210f; font-weight:700; font-size:1rem;
+           padding:13px 22px; border-radius:8px; border:none; }
+  button:active { opacity:.85; }
   .spinner { margin:18px auto; width:28px; height:28px; border:3px solid #2c5c3f; border-top-color:#3ddc84;
              border-radius:50%; animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
@@ -23,41 +30,64 @@
     <h1 id="title">Connecting to X-Golf WiFi…</h1>
     <p id="msg">One moment while we get you online.</p>
     <div class="spinner" id="spinner"></div>
-    <a class="btn" id="actionBtn" href="#" style="display:none;"></a>
+
+    <form id="signupForm" style="display:none;" target="hiddenFrame">
+      <label for="firstName">First Name</label>
+      <input type="text" id="firstName" name="firstName" autocomplete="given-name" required>
+
+      <label for="lastName">Last Name</label>
+      <input type="text" id="lastName" name="lastName" autocomplete="family-name" required>
+
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" autocomplete="email" required>
+
+      <label for="phone">Phone (optional)</label>
+      <input type="tel" id="phone" name="phone" autocomplete="tel">
+
+      <button type="submit">Join WiFi</button>
+      <small>By joining the wifi you consent to receiving promotional emails from X-Golf Glen Carbon.</small>
+    </form>
   </div>
+
+  <iframe name="hiddenFrame" style="display:none;"></iframe>
 
 <script>
 /*
-  X-Golf Glen Carbon — Guest WiFi redirect-catcher.
+  X-Golf Glen Carbon — Guest WiFi splash / sign-up page.
 
   Apple's WiFi sign-in popup ("Captive Network Assistant") is a heavily restricted
-  mini-browser that fails to run Zapier's form-submission JS reliably (confirmed:
-  same form works fine in real Safari). To work around this, we avoid automatic
-  script-driven redirects and instead show the guest a real tappable button at each
-  step — a genuine link tap is far more likely to hand off to full Safari than a
-  JS `location.replace()` call, which tends to stay stuck inside the restricted view.
+  mini-browser that could not run Zapier's JS-driven Interfaces form (confirmed: the
+  same Zapier form worked fine in full Safari, but failed silently inside the WiFi
+  popup even with a real button tap). To guarantee compatibility we no longer send
+  guests to any external form at all. Instead THIS page contains a plain, old-school
+  HTML <form> and submits it directly to a Google Form's "formResponse" endpoint via
+  a hidden target iframe — no fetch/XHR, no SPA framework, just a native browser
+  form post. This technique has worked in virtually every browser (including this
+  one) since the 1990s.
 
-  Zapier Interfaces form fields also cannot dynamically pre-fill from an incoming URL
-  parameter, and its "Navigate to external URL" action cannot use a dynamic/field
-  value as the redirect target (both confirmed to only support static text) — so we
-  can't rely on Zapier to carry Meraki's one-time `base_grant_url` value through the
-  form submission and back to us. Instead, THIS page remembers it directly:
-
+  Flow:
   1) INBOUND (from Meraki): Meraki loads this page as the SSID's Custom Splash URL
      and appends `base_grant_url` (the one-time link that grants network access) as a
-     query parameter. We save that value in this browser's storage, then show a
-     "Continue to Sign-Up" button pointing at the Zapier sign-up form.
+     query parameter. We save that value in this browser's storage and show the
+     sign-up form.
+  2) SUBMIT: the form posts to the Google Form in a hidden iframe (guest never
+     leaves this page), Zapier's "New Form Response" trigger (free-tier friendly)
+     picks it up moments later and syncs the contact to Constant Contact. We don't
+     wait for a response — we simply give the background post a brief moment to fire,
+     then redirect the guest's browser straight to the stored `base_grant_url`,
+     completing the handshake with Meraki and unlocking internet access.
 
-  2) RETURN (from Zapier): After the guest submits the form, Zapier's "Navigate to
-     external URL" action sends them back to this same page (no base_grant_url query
-     param present this time — that's how we detect we're on the return trip). We
-     read back the value we stored in step 1 and show a "Connect to WiFi" button
-     pointing straight at it — tapping it completes the handshake with Meraki and
-     unlocks internet access.
-
-  Config: update ZAPIER_FORM_URL below to match your published Zapier Interfaces page.
+  Config:
+  - GOOGLE_FORM_ACTION + the entry.* field names below must match your Google Form.
+    Get them by viewing the form's page source for FB_PUBLIC_LOAD_DATA_, or by using
+    Google Forms' "Get pre-filled link" feature.
 */
-var ZAPIER_FORM_URL = "https://new-form-project-1b1309.zapier.app/x-golf-guest-wifi-sign-up";
+var GOOGLE_FORM_ACTION = "https://docs.google.com/forms/d/e/1FAIpQLSe3MM8lWB_xDP_vOZkHZ7APjIkAS0SC-cPxEibU-KCA7nbyuA/formResponse";
+var FIELD_FIRST_NAME = "entry.2005620554";
+var FIELD_LAST_NAME  = "entry.537825505";
+var FIELD_EMAIL      = "entry.1045781291";
+var FIELD_PHONE      = "entry.1166974658";
+
 var STORAGE_KEY = "xgolf_base_grant_url";
 
 function getParams() {
@@ -77,44 +107,55 @@ function loadGrantUrl() {
   }
 }
 
-function showButton(label, href, openInNewTab) {
+function showForm(grantUrl) {
   document.getElementById("spinner").style.display = "none";
-  var btn = document.getElementById("actionBtn");
-  btn.textContent = label;
-  btn.href = href;
-  if (openInNewTab) { btn.target = "_blank"; btn.rel = "noopener"; }
-  btn.style.display = "inline-block";
+  document.getElementById("title").textContent = "Welcome to X-Golf Glen Carbon";
+  document.getElementById("msg").textContent = "Enter your info to connect to guest WiFi.";
+  var form = document.getElementById("signupForm");
+  form.style.display = "block";
+
+  form.addEventListener("submit", function (e) {
+    // Let the browser submit this form normally (native POST, no JS) into the
+    // hidden iframe — do NOT preventDefault. Just give it a moment to fire off,
+    // then move the guest along to the real WiFi grant URL.
+    document.getElementById("title").textContent = "Connecting…";
+    document.getElementById("msg").textContent = "One moment while we get you online.";
+    form.style.display = "none";
+    document.getElementById("spinner").style.display = "block";
+    setTimeout(function () {
+      window.location.href = grantUrl;
+    }, 800);
+  });
 }
 
 (function () {
   var params = getParams();
   var inboundGrantUrl = params.get("base_grant_url");
-  var title = document.getElementById("title");
   var msg = document.getElementById("msg");
 
+  var grantUrl = inboundGrantUrl || loadGrantUrl();
+
   if (inboundGrantUrl) {
-    // First hop from Meraki: remember the grant link, then prompt guest to continue.
     saveGrantUrl(inboundGrantUrl);
-    title.textContent = "Welcome to X-Golf Glen Carbon";
-    msg.textContent = "Tap below to sign up for guest WiFi with your email.";
-    showButton("Continue to Sign-Up →", ZAPIER_FORM_URL, true);
+  }
+
+  if (grantUrl) {
+    // Build hidden form action targets pointing at the Google Form.
+    var form = document.getElementById("signupForm");
+    form.action = GOOGLE_FORM_ACTION;
+    document.getElementById("firstName").name = FIELD_FIRST_NAME;
+    document.getElementById("lastName").name = FIELD_LAST_NAME;
+    document.getElementById("email").name = FIELD_EMAIL;
+    document.getElementById("phone").name = FIELD_PHONE;
+    form.method = "POST";
+    showForm(grantUrl);
     return;
   }
 
-  var storedGrantUrl = loadGrantUrl();
-  if (storedGrantUrl) {
-    // Return trip from Zapier: prompt guest to finish connecting.
-    title.textContent = "You're almost connected!";
-    msg.textContent = "Tap below to finish connecting to WiFi.";
-    showButton("Connect to WiFi →", storedGrantUrl, false);
-    return;
-  }
-
-  title.textContent = "X-Golf Glen Carbon Guest WiFi";
+  document.getElementById("title").textContent = "X-Golf Glen Carbon Guest WiFi";
   msg.textContent = "This page is meant to be opened from the WiFi sign-in screen.";
   document.getElementById("spinner").style.display = "none";
 })();
 </script>
 </body>
 </html>
-<!-- trigger pages build 2026-09-23T12:01:00.1953174-05:00 -->
